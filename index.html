@@ -629,8 +629,70 @@
             gap: 15px;
             justify-content: center;
             flex-wrap: wrap;
+            align-items: center;
             z-index: 10;
             position: relative;
+        }
+
+        .mode-toggle {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 14px;
+            border-radius: 14px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(6px);
+        }
+
+        .mode-label {
+            color: #fff;
+            letter-spacing: 1px;
+            font-weight: 700;
+            font-size: 0.9rem;
+        }
+
+        .toggle {
+            position: relative;
+            width: 64px;
+            height: 32px;
+            border-radius: 20px;
+            background: linear-gradient(135deg, #0f1c2f, #1c2f4a);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            cursor: pointer;
+            transition: background 0.3s ease;
+        }
+
+        .toggle::after {
+            content: '';
+            position: absolute;
+            top: 4px;
+            left: 4px;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #ff8800, #ffaa33);
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+            transition: transform 0.25s ease, background 0.25s ease;
+        }
+
+        .toggle.active {
+            background: linear-gradient(135deg, #0d2140, #0b274a);
+        }
+
+        .toggle.active::after {
+            transform: translateX(32px);
+            background: linear-gradient(135deg, #00a2ff, #00ddff);
+        }
+
+        .mode-note {
+            width: 100%;
+            text-align: center;
+            color: rgba(255, 255, 255, 0.75);
+            font-size: 0.9rem;
+            margin-top: 6px;
+            letter-spacing: 0.5px;
         }
 
         /* Score Display */
@@ -751,6 +813,34 @@
                 inset 0 4px 15px rgba(0, 0, 0, 0.8),
                 0 0 25px var(--player2-glow);
         }
+
+        .game-board.ai-turn {
+            pointer-events: none;
+            filter: brightness(0.9);
+            transition: filter 0.3s ease;
+        }
+
+        .ai-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 12px;
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            color: rgba(255, 255, 255, 0.9);
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+        }
+
+        .ai-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #00a2ff, #66e2ff);
+            box-shadow: 0 0 12px rgba(0, 190, 255, 0.8);
+        }
     </style>
 </head>
 
@@ -775,6 +865,11 @@
         <span class="player-text player1" id="playerText">Guerrier Orange</span>
     </div>
 
+    <div class="ai-status" id="aiStatus" style="display: none;">
+        <span class="ai-dot"></span>
+        <span>IA prête en bleu</span>
+    </div>
+
     <!-- Game Board -->
     <div class="game-container">
         <div class="board-wrapper">
@@ -796,9 +891,15 @@
 
     <!-- Controls -->
     <div class="controls">
+        <div class="mode-toggle" id="aiToggle" tabindex="0" role="switch" aria-checked="false">
+            <span class="mode-label">Mode IA</span>
+            <div class="toggle" id="aiSwitch"></div>
+        </div>
         <button class="btn btn-primary" id="restartBtn">⚡ Rejouer</button>
         <button class="btn btn-secondary" id="resetScoreBtn">🔄 Reset Scores</button>
     </div>
+
+    <p class="mode-note" id="modeNote">Mode duel humain actif.</p>
 
     <!-- Victory Overlay -->
     <div class="victory-overlay" id="victoryOverlay">
@@ -818,6 +919,9 @@
         let currentPlayer = 1;
         let gameOver = false;
         let scores = { 1: 0, 2: 0 };
+        let aiEnabled = false;
+        const AI_PLAYER = 2;
+        let aiThinking = false;
 
         // DOM Elements
         const gameBoard = document.getElementById('gameBoard');
@@ -832,6 +936,10 @@
         const restartBtn = document.getElementById('restartBtn');
         const resetScoreBtn = document.getElementById('resetScoreBtn');
         const playAgainBtn = document.getElementById('playAgainBtn');
+        const aiToggle = document.getElementById('aiToggle');
+        const aiSwitch = document.getElementById('aiSwitch');
+        const modeNote = document.getElementById('modeNote');
+        const aiStatus = document.getElementById('aiStatus');
 
         // Dark mode detection
         if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
@@ -866,6 +974,8 @@
         function initBoard() {
             board = Array(ROWS).fill(null).map(() => Array(COLS).fill(0));
             gameBoard.innerHTML = '';
+            aiThinking = false;
+            gameBoard.classList.remove('ai-turn');
 
             for (let row = 0; row < ROWS; row++) {
                 for (let col = 0; col < COLS; col++) {
@@ -916,6 +1026,59 @@
                 const cell = getCell(row, col);
                 cell.classList.remove('column-hover');
             }
+        }
+
+        function findAvailableRow(col) {
+            for (let row = ROWS - 1; row >= 0; row--) {
+                if (board[row][col] === 0) return row;
+            }
+            return -1;
+        }
+
+        function getValidColumns() {
+            const columns = [];
+            for (let col = 0; col < COLS; col++) {
+                if (board[0][col] === 0) columns.push(col);
+            }
+            return columns;
+        }
+
+        function findStrategicMove(player) {
+            const columns = getValidColumns();
+            for (const col of columns) {
+                const row = findAvailableRow(col);
+                board[row][col] = player;
+                const winning = checkWin(row, col);
+                board[row][col] = 0;
+                if (winning) return col;
+            }
+            return null;
+        }
+
+        function getAiMove() {
+            const validColumns = getValidColumns();
+            if (validColumns.length === 0) return null;
+
+            const winningMove = findStrategicMove(AI_PLAYER);
+            if (winningMove !== null) return winningMove;
+
+            const blockingMove = findStrategicMove(1);
+            if (blockingMove !== null) return blockingMove;
+
+            const ordered = [...validColumns].sort((a, b) => Math.abs(a - 3) - Math.abs(b - 3));
+            return ordered[0];
+        }
+
+        function triggerAiTurn() {
+            if (!aiEnabled || currentPlayer !== AI_PLAYER || gameOver) return;
+            aiThinking = true;
+            gameBoard.classList.add('ai-turn');
+            setTimeout(() => {
+                const move = getAiMove();
+                aiThinking = false;
+                gameBoard.classList.remove('ai-turn');
+                if (move !== null) handleCellClick(move, true);
+            }, 600);
         }
 
         // ========== AUDIO SYSTEM (iOS COMPATIBLE) ==========
@@ -1015,17 +1178,12 @@
         // ========== END AUDIO SYSTEM ==========
 
         // Handle cell click
-        function handleCellClick(col) {
-            if (gameOver) return;
+        function handleCellClick(col, isAi = false) {
+            if (gameOver || aiThinking) return;
+            if (aiEnabled && currentPlayer === AI_PLAYER && !isAi) return;
 
             // Find lowest empty row in column
-            let targetRow = -1;
-            for (let row = ROWS - 1; row >= 0; row--) {
-                if (board[row][col] === 0) {
-                    targetRow = row;
-                    break;
-                }
-            }
+            const targetRow = findAvailableRow(col);
 
             if (targetRow === -1) return; // Column is full
 
@@ -1067,6 +1225,7 @@
                     // Switch player
                     currentPlayer = currentPlayer === 1 ? 2 : 1;
                     updatePlayerIndicator();
+                    triggerAiTurn();
                 }
             }, 600);
         }
@@ -1075,7 +1234,8 @@
         function updatePlayerIndicator() {
             playerOrb.className = `current-player-orb player${currentPlayer}`;
             playerText.className = `player-text player${currentPlayer}`;
-            playerText.textContent = currentPlayer === 1 ? 'Guerrier Orange' : 'Guerrier Bleu';
+            const playerLabel = currentPlayer === 1 ? 'Guerrier Orange' : aiEnabled ? 'Guerrier Bleu (IA)' : 'Guerrier Bleu';
+            playerText.textContent = playerLabel;
 
             gameBoard.classList.remove('player1-turn', 'player2-turn');
             gameBoard.classList.add(`player${currentPlayer}-turn`);
@@ -1197,7 +1357,30 @@
             updateScores();
         }
 
+        function updateModeUI() {
+            aiSwitch.classList.toggle('active', aiEnabled);
+            aiToggle.setAttribute('aria-checked', aiEnabled);
+            aiStatus.style.display = aiEnabled ? 'inline-flex' : 'none';
+            modeNote.textContent = aiEnabled
+                ? "Mode IA activé : le guerrier bleu est guidé par l'esprit digital."
+                : 'Mode duel humain actif.';
+        }
+
+        function setAiMode(enabled) {
+            aiEnabled = enabled;
+            updateModeUI();
+            initBoard();
+        }
+
         // Event listeners
+        aiToggle.addEventListener('click', () => setAiMode(!aiEnabled));
+        aiToggle.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                setAiMode(!aiEnabled);
+            }
+        });
+
         restartBtn.addEventListener('click', () => {
             initBoard();
         });
@@ -1213,6 +1396,7 @@
         });
 
         // Initialize game
+        updateModeUI();
         createBackgroundParticles();
         initBoard();
     </script>
