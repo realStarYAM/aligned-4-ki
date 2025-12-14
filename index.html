@@ -987,6 +987,28 @@
             };
         }
 
+        // Play turn voice (anime style)
+        let currentTurnSound = null;
+        const VOLUME_VOICE = 1.0;
+
+        function playTurnVoice(player) {
+            if (currentTurnSound) {
+                currentTurnSound.pause();
+                currentTurnSound = null;
+            }
+
+            const src = player === 1 ? 'turn-orange.mp3' : 'turn-blue.mp3';
+            const sound = new Audio(src);
+            sound.volume = VOLUME_VOICE;
+            currentTurnSound = sound;
+
+            sound.play().catch(e => console.log('Turn voice failed:', e));
+
+            sound.onended = () => {
+                if (currentTurnSound === sound) currentTurnSound = null;
+            };
+        }
+
         // Attach unlock to common user interactions
         document.addEventListener('touchstart', unlockAudio, { once: true });
         document.addEventListener('click', unlockAudio, { once: true });
@@ -1057,6 +1079,9 @@
 
             gameBoard.classList.remove('player1-turn', 'player2-turn');
             gameBoard.classList.add(`player${currentPlayer}-turn`);
+
+            // Play voice with "anime" delay
+            setTimeout(() => playTurnVoice(currentPlayer), 200);
         }
 
         // Check for win
@@ -1192,8 +1217,7 @@
         initBoard();
     </script>
 
-    <audio id="sound-drop" src="drop.mp3" preload="auto"></audio>
-    <audio id="sound-victory" src="victory.mp3" preload="auto"></audio>
+
 
 </body>
 
