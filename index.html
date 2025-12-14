@@ -918,14 +918,79 @@
             }
         }
 
-        // Handle cell click
-        function playSound(id) {
-            const sound = document.getElementById(id);
-            if (sound) {
-                sound.currentTime = 0;
-                sound.play().catch(e => console.log("Audio play failed", e));
-            }
+        // ========== AUDIO SYSTEM (iOS COMPATIBLE) ==========
+        // Audio unlock state - iOS requires user interaction before playing audio
+        let audioUnlocked = false;
+
+        // Current playing sounds (to prevent overlap)
+        let currentDropSound = null;
+        let currentVictorySound = null;
+
+        // Volume settings (0.0 to 1.0)
+        const VOLUME_DROP = 0.7;
+        const VOLUME_VICTORY = 0.8;
+
+        // Unlock audio on first user interaction (required for iOS Safari)
+        function unlockAudio() {
+            if (audioUnlocked) return;
+
+            // Create and play a silent audio to unlock the audio context
+            const silentAudio = new Audio();
+            silentAudio.volume = 0;
+            silentAudio.play().then(() => {
+                audioUnlocked = true;
+                console.log('Audio unlocked');
+            }).catch(() => {
+                // Silently ignore - will retry on next interaction
+            });
         }
+
+        // Play drop sound (when a piece falls)
+        function playDrop() {
+            // Stop previous drop sound if still playing
+            if (currentDropSound) {
+                currentDropSound.pause();
+                currentDropSound = null;
+            }
+
+            // Create new Audio instance (iOS fix - don't reuse same element)
+            const sound = new Audio('drop.mp3');
+            sound.volume = VOLUME_DROP;
+            currentDropSound = sound;
+
+            sound.play().catch(e => console.log('Drop sound failed:', e));
+
+            // Clean up reference when done
+            sound.onended = () => {
+                if (currentDropSound === sound) currentDropSound = null;
+            };
+        }
+
+        // Play victory sound
+        function playVictory() {
+            // Stop previous victory sound if still playing
+            if (currentVictorySound) {
+                currentVictorySound.pause();
+                currentVictorySound = null;
+            }
+
+            // Create new Audio instance
+            const sound = new Audio('victory.mp3');
+            sound.volume = VOLUME_VICTORY;
+            currentVictorySound = sound;
+
+            sound.play().catch(e => console.log('Victory sound failed:', e));
+
+            // Clean up reference when done
+            sound.onended = () => {
+                if (currentVictorySound === sound) currentVictorySound = null;
+            };
+        }
+
+        // Attach unlock to common user interactions
+        document.addEventListener('touchstart', unlockAudio, { once: true });
+        document.addEventListener('click', unlockAudio, { once: true });
+        // ========== END AUDIO SYSTEM ==========
 
         // Handle cell click
         function handleCellClick(col) {
@@ -944,7 +1009,7 @@
 
             // Place piece
             board[targetRow][col] = currentPlayer;
-            playSound('sound-drop');
+            playDrop();
             const cell = getCell(targetRow, col);
             const orb = cell.querySelector('.ki-orb');
             const flash = cell.querySelector('.impact-flash');
@@ -1051,7 +1116,7 @@
         // Show victory overlay
         function showVictory(winner) {
             victoryOverlay.classList.add('active');
-            if (winner !== 0) playSound('sound-victory');
+            if (winner !== 0) playVictory();
 
             if (winner === 0) {
                 victoryTitle.textContent = 'ÉGALITÉ!';
