@@ -919,7 +919,7 @@
         let currentPlayer = 1;
         let gameOver = false;
         let scores = { 1: 0, 2: 0 };
-        let aiEnabled = false;
+        let aiEnabled = true;
         const AI_PLAYER = 2;
         let aiThinking = false;
 
@@ -1035,6 +1035,10 @@
             return -1;
         }
 
+        function isAITurn() {
+            return aiEnabled && currentPlayer === AI_PLAYER;
+        }
+
         function getValidColumns() {
             const columns = [];
             for (let col = 0; col < COLS; col++) {
@@ -1069,16 +1073,17 @@
             return ordered[0];
         }
 
-        function triggerAiTurn() {
-            if (!aiEnabled || currentPlayer !== AI_PLAYER || gameOver) return;
+        function scheduleAIMove() {
+            if (!isAITurn() || gameOver) return;
             aiThinking = true;
             gameBoard.classList.add('ai-turn');
+            const delay = 350 + Math.random() * 250;
             setTimeout(() => {
                 const move = getAiMove();
                 aiThinking = false;
                 gameBoard.classList.remove('ai-turn');
-                if (move !== null) handleCellClick(move, true);
-            }, 600);
+                if (move !== null) makeMove(move);
+            }, delay);
         }
 
         // ========== AUDIO SYSTEM (iOS COMPATIBLE) ==========
@@ -1172,22 +1177,40 @@
             };
         }
 
+        function playAiTurnVoice() {
+            if (currentTurnSound) {
+                currentTurnSound.pause();
+                currentTurnSound = null;
+            }
+
+            const sound = new Audio('ai-turn.mp3');
+            sound.volume = VOLUME_VOICE;
+            currentTurnSound = sound;
+
+            sound.play().catch(e => console.log('AI turn voice failed:', e));
+
+            sound.onended = () => {
+                if (currentTurnSound === sound) currentTurnSound = null;
+            };
+        }
+
         // Attach unlock to common user interactions
         document.addEventListener('touchstart', unlockAudio, { once: true });
         document.addEventListener('click', unlockAudio, { once: true });
         // ========== END AUDIO SYSTEM ==========
 
         // Handle cell click
-        function handleCellClick(col, isAi = false) {
+        function handleCellClick(col) {
             if (gameOver || aiThinking) return;
-            if (aiEnabled && currentPlayer === AI_PLAYER && !isAi) return;
+            if (isAITurn()) return;
+            makeMove(col);
+        }
 
-            // Find lowest empty row in column
+        function makeMove(col) {
+            if (gameOver || aiThinking) return;
             const targetRow = findAvailableRow(col);
+            if (targetRow === -1) return;
 
-            if (targetRow === -1) return; // Column is full
-
-            // Place piece
             board[targetRow][col] = currentPlayer;
             playDrop();
             const cell = getCell(targetRow, col);
@@ -1198,7 +1221,6 @@
             orb.classList.add(`player${currentPlayer}`, 'dropping');
             flash.classList.add(`player${currentPlayer}`);
 
-            // Trigger impact flash after drop animation
             setTimeout(() => {
                 orb.classList.remove('dropping');
                 orb.classList.add('visible');
@@ -1209,7 +1231,6 @@
                 }, 400);
             }, 500);
 
-            // Check for win
             setTimeout(() => {
                 const winningCells = checkWin(targetRow, col);
                 if (winningCells) {
@@ -1222,10 +1243,9 @@
                     gameOver = true;
                     setTimeout(() => showVictory(0), 500);
                 } else {
-                    // Switch player
                     currentPlayer = currentPlayer === 1 ? 2 : 1;
                     updatePlayerIndicator();
-                    triggerAiTurn();
+                    if (isAITurn()) scheduleAIMove();
                 }
             }, 600);
         }
@@ -1234,14 +1254,24 @@
         function updatePlayerIndicator() {
             playerOrb.className = `current-player-orb player${currentPlayer}`;
             playerText.className = `player-text player${currentPlayer}`;
-            const playerLabel = currentPlayer === 1 ? 'Guerrier Orange' : aiEnabled ? 'Guerrier Bleu (IA)' : 'Guerrier Bleu';
+            const playerLabel = currentPlayer === 1 ? 'Guerrier Orange' : aiEnabled ? 'IA Bleu' : 'Guerrier Bleu';
             playerText.textContent = playerLabel;
 
             gameBoard.classList.remove('player1-turn', 'player2-turn');
             gameBoard.classList.add(`player${currentPlayer}-turn`);
 
-            // Play voice with "anime" delay
-            setTimeout(() => playTurnVoice(currentPlayer), 200);
+            const turnPlayer = currentPlayer;
+            const aiTurn = isAITurn();
+            const voiceDelay = aiTurn ? 150 : 200;
+
+            setTimeout(() => {
+                if (currentPlayer !== turnPlayer) return;
+                if (aiTurn) {
+                    playAiTurnVoice();
+                } else {
+                    playTurnVoice(turnPlayer);
+                }
+            }, voiceDelay);
         }
 
         // Check for win
